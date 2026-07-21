@@ -4,7 +4,7 @@ import requests as req
 
 DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '') or os.environ.get('RAILWAY_STATIC_URL', '') or socket.gethostname()
 PORT = int(os.environ.get('PORT', 8080))
-PANEL_PORT = 10000
+XRAY_PORT = 10086
 
 state = {
     'uid': str(uuid.uuid4()),
@@ -13,7 +13,7 @@ state = {
 }
 state['url'] = f"vless://{state['uid']}@{DOMAIN}:443?security=tls&encryption=none&type=ws&path={state['path']}&host={DOMAIN}&sni={DOMAIN}&fp=chrome#STARGATE"
 
-print(f"[Stargate] Xray: {PORT} | Panel: {PANEL_PORT} | Domain: {DOMAIN}")
+print(f"[Stargate] Domain: {DOMAIN} | Port: {PORT} | Xray: {XRAY_PORT}")
 
 def download_xray():
     if os.path.exists('./xray') and os.path.getsize('./xray') > 10000000: return True
@@ -30,7 +30,7 @@ def build_config():
     return {
         "log": {"loglevel": "warning"},
         "inbounds": [{
-            "listen": "0.0.0.0", "port": PORT, "protocol": "vless",
+            "listen": "127.0.0.1", "port": XRAY_PORT, "protocol": "vless",
             "settings": {"clients": [{"id": state['uid']}], "decryption": "none"},
             "streamSettings": {"network": "ws", "security": "none", "wsSettings": {"path": state['path']}},
             "sniffing": {"enabled": True, "destOverride": ["http", "tls"]}
@@ -49,9 +49,52 @@ def load_html():
         with open('index.html', 'r', encoding='utf-8') as f: return f.read()
     return None
 
-class PanelHandler(BaseHTTPRequestHandler):
+def pipe(src, dst):
+    try:
+        while True:
+            d = src.recv(32768)
+            if not d: break
+            dst.sendall(d)
+    except: pass
+    finally:
+        try: src.close()
+        except: pass
+        try: dst.close()
+        except: pass
+
+def handle_ws(client):
+    backend = None
+    try:
+        backend = socket.socket(); backend.settimeout(10)
+        backend.connect(('127.0.0.1', XRAY_PORT))
+        backend.sendall(f"GET {state['path']} HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n".encode())
+        resp = b""
+        while b"\r\n\r\n" not in resp:
+            c = backend.recv(4096)
+            if not c: break
+            resp += c
+        if b"101" not in resp: return
+        t1 = threading.Thread(target=pipe, args=(client, backend), daemon=True)
+        t2 = threading.Thread(target=pipe, args=(backend, client), daemon=True)
+        t1.start(); t2.start()
+        t1.join(timeout=300); t2.join(timeout=300)
+    except: pass
+    finally:
+        try: client.close()
+        except: pass
+        if backend: try: backend.close()
+        except: pass
+
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/' or self.path == '/index.html':
+        if self.path.startswith('/ws/'):
+            key = self.headers.get('Sec-WebSocket-Key', '')
+            if not key: self.send_response(400); self.end_headers(); return
+            acc = base64.b64encode(hashlib.sha1((key+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+            self.send_response(101); self.send_header('Upgrade','websocket'); self.send_header('Connection','Upgrade'); self.send_header('Sec-WebSocket-Accept',acc); self.end_headers()
+            c = self.request; self.request = None
+            threading.Thread(target=handle_ws, args=(c,), daemon=True).start()
+        elif self.path == '/' or self.path == '/index.html':
             html = load_html()
             if html:
                 html = html.replace('{{DOMAIN}}', DOMAIN)
@@ -78,19 +121,17 @@ class PanelHandler(BaseHTTPRequestHandler):
         else: self.send_response(404); self.end_headers()
     def log_message(self,f,*a): pass
 
-def start_panel():
-    try:
-        server = HTTPServer(('0.0.0.0', PANEL_PORT), PanelHandler)
-        print(f"[Stargate] Panel: http://{DOMAIN}:{PANEL_PORT}")
-        server.serve_forever()
-    except Exception as e:
-        print(f"[Stargate] Panel error: {e}")
+class T(HTTPServer):
+    def process_request(self,r,a):
+        threading.Thread(target=self._p,args=(r,a),daemon=True).start()
+    def _p(self,r,a):
+        try: self.finish_request(r,a)
+        except: pass
+        finally: self.shutdown_request(r)
 
 if __name__ == '__main__':
     if not download_xray(): sys.exit(1)
     if not start_xray(): sys.exit(1)
     print(f"[Stargate] VLESS: {state['url']}")
-    threading.Thread(target=start_panel, daemon=True).start()
-    try:
-        while True: time.sleep(3600)
-    except KeyboardInterrupt: pass
+    print(f"[Stargate] Panel: https://{DOMAIN}")
+    T(('0.0.0.0', PORT), Handler).serve_forever()
