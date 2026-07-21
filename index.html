@@ -1,0 +1,75 @@
+<!DOCTYPE html><html lang="fa" dir="rtl"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="theme-color" content="#0a0a0a"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<title>Stargate VLESS</title>
+<style>
+:root{--bg:#0a0a0a;--card:rgba(16,16,24,0.9);--border:rgba(88,166,255,0.2);--blue:#58a6ff;--green:#3fb950;--text:#c9d1d9;--dim:#8b949e}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+.container{position:relative;z-index:1;max-width:650px;margin:0 auto;padding:15px}
+.header{text-align:center;padding:25px 15px;margin-bottom:20px}
+.header h1{font-size:2.5em;font-weight:900;letter-spacing:4px;background:linear-gradient(135deg,#58a6ff,#bc8cff,#58a6ff);background-size:200% 200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 3s ease-in-out infinite}
+@keyframes shimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.header .subtitle{color:var(--dim);font-size:.9em;margin-top:5px;letter-spacing:2px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:15px 10px;text-align:center;backdrop-filter:blur(20px)}
+.stat .val{font-size:1.8em;font-weight:bold;color:var(--blue)}
+.stat .lbl{color:var(--dim);font-size:.7em;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:20px;margin:15px 0;backdrop-filter:blur(20px);position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(88,166,255,0.05) 0%,transparent 70%);animation:rotate 10s linear infinite}
+@keyframes rotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.card h2{color:var(--blue);font-size:1em;margin-bottom:12px;position:relative;z-index:1}
+.config-box{background:rgba(0,0,0,.5);padding:12px;border-radius:12px;word-break:break-all;font-family:'Courier New',monospace;font-size:.7em;color:var(--green);margin:10px 0;position:relative;z-index:1;max-height:120px;overflow-y:auto;border:1px solid var(--border)}
+.btn{padding:12px;border:none;border-radius:12px;font-weight:bold;cursor:pointer;font-size:.85em;margin:5px 0;width:100%;transition:all .3s;position:relative;z-index:1;text-transform:uppercase;letter-spacing:1px}
+.btn:active{transform:scale(.95)}
+.btn-primary{background:linear-gradient(135deg,#1f6feb,#58a6ff);color:#fff;box-shadow:0 4px 15px rgba(31,111,235,.3)}
+.btn-secondary{background:linear-gradient(135deg,#238636,#3fb950);color:#fff;box-shadow:0 4px 15px rgba(35,134,54,.3)}
+.info-row{display:flex;justify-content:space-between;color:var(--dim);font-size:.7em;margin:5px 0;position:relative;z-index:1}
+.info-row span:last-child{color:var(--green)}
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:16px;padding:15px 25px;z-index:999;animation:slideUp .3s ease;backdrop-filter:blur(20px);font-weight:bold;letter-spacing:1px;display:none}
+@keyframes slideUp{from{transform:translate(-50%,100px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+.footer{text-align:center;padding:20px;color:var(--dim);font-size:.65em;position:relative;z-index:1;letter-spacing:2px}
+</style></head><body>
+<canvas id="canvas"></canvas>
+<div class="container">
+<div class="header"><h1>STARGATE</h1><div class="subtitle">✦ QUANTUM VLESS PROTOCOL ✦</div></div>
+<div class="stats">
+<div class="stat"><div class="val" id="uptime">--</div><div class="lbl">⏱ UPTIME</div></div>
+<div class="stat"><div class="val">1</div><div class="lbl">👤 USERS</div></div>
+<div class="stat"><div class="val">443</div><div class="lbl">🔌 PORT</div></div>
+</div>
+<div class="card">
+<h2>🌌 VLESS CONFIG</h2>
+<div class="config-box" id="config">Loading...</div>
+<div class="info-row"><span>DOMAIN</span><span id="domain">--</span></div>
+<div class="info-row"><span>PORT</span><span>443</span></div>
+<div class="info-row"><span>PROTOCOL</span><span>VLESS</span></div>
+<div class="info-row"><span>NETWORK</span><span>WebSocket + TLS</span></div>
+<div class="info-row"><span>UUID</span><span id="uuid">--</span></div>
+<button class="btn btn-primary" onclick="copy()">📋 COPY CONFIG</button>
+<button class="btn btn-secondary" onclick="gen()">🔄 GENERATE NEW</button>
+</div>
+<div class="footer">✦ STARGATE ✦ <span id="domain2">--</span> ✦</div>
+</div>
+<div id="toast"></div>
+<script>
+var canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),w,h,chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789stargate✦🌌',drops=[],fontSize=14;
+function resize(){w=canvas.width=window.innerWidth;h=canvas.height=window.innerHeight;drops=[];for(var i=0;i<w/fontSize;i++)drops[i]=Math.random()*h}
+resize();window.addEventListener('resize',resize);
+function rain(){ctx.fillStyle='rgba(10,10,10,0.05)';ctx.fillRect(0,0,w,h);ctx.font=fontSize+'px monospace';
+for(var i=0;i<drops.length;i++){var ch=chars[Math.floor(Math.random()*chars.length)],x=i*fontSize,y=drops[i];
+ctx.fillStyle='hsl('+Math.random()*360+',70%,60%)';ctx.fillText(ch,x,y);
+if(y>h&&Math.random()>.975)drops[i]=0;drops[i]+=fontSize*0.6}requestAnimationFrame(rain)}
+rain();
+var startTime=Date.now(),configUrl='';
+setInterval(function(){var s=Math.floor((Date.now()-startTime)/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),se=s%60;document.getElementById('uptime').textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(se).padStart(2,'0')},1000);
+async function loadConfig(){var r=await fetch('/api/config');var d=await r.json();configUrl=d.url;document.getElementById('config').textContent=d.url;document.getElementById('domain').textContent=d.domain;document.getElementById('domain2').textContent=d.domain;document.getElementById('uuid').textContent=d.uuid.substring(0,16)+'...'}
+loadConfig();
+function copy(){navigator.clipboard.writeText(configUrl);showToast('✅ COPIED')}
+async function gen(){var r=await fetch('/api/new');var d=await r.json();configUrl=d.url;document.getElementById('config').textContent=d.url;document.getElementById('uuid').textContent=d.uuid.substring(0,16)+'...';showToast('🔄 NEW CONFIG')}
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(function(){t.style.display='none'},2000)}
+</script></body></html>
