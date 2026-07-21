@@ -4,6 +4,7 @@ import requests as req
 
 DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '') or os.environ.get('RAILWAY_STATIC_URL', '') or socket.gethostname()
 PORT = int(os.environ.get('PORT', 8080))
+PANEL_PORT = 10000
 
 state = {
     'uid': str(uuid.uuid4()),
@@ -12,7 +13,7 @@ state = {
 }
 state['url'] = f"vless://{state['uid']}@{DOMAIN}:443?security=tls&encryption=none&type=ws&path={state['path']}&host={DOMAIN}&sni={DOMAIN}&fp=chrome#STARGATE"
 
-print(f"[Stargate] Domain: {DOMAIN} | Port: {PORT}")
+print(f"[Stargate] Xray: {PORT} | Panel: {PANEL_PORT} | Domain: {DOMAIN}")
 
 def download_xray():
     if os.path.exists('./xray') and os.path.getsize('./xray') > 10000000: return True
@@ -48,7 +49,7 @@ def load_html():
         with open('index.html', 'r', encoding='utf-8') as f: return f.read()
     return None
 
-class Handler(BaseHTTPRequestHandler):
+class PanelHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
             html = load_html()
@@ -77,17 +78,19 @@ class Handler(BaseHTTPRequestHandler):
         else: self.send_response(404); self.end_headers()
     def log_message(self,f,*a): pass
 
+def start_panel():
+    try:
+        server = HTTPServer(('0.0.0.0', PANEL_PORT), PanelHandler)
+        print(f"[Stargate] Panel: http://{DOMAIN}:{PANEL_PORT}")
+        server.serve_forever()
+    except Exception as e:
+        print(f"[Stargate] Panel error: {e}")
+
 if __name__ == '__main__':
     if not download_xray(): sys.exit(1)
     if not start_xray(): sys.exit(1)
     print(f"[Stargate] VLESS: {state['url']}")
-    print(f"[Stargate] Panel: https://{DOMAIN}")
-    HTTPServer(('127.0.0.1', 10000), Handler)  # Panel on localhost only
-    # Xray is on PORT (0.0.0.0:8080) - handles both VLESS and serves panel via fallback? No.
-    # Actually we need Xray to fallback non-VLESS to panel. 
-    # Simple solution: run panel on same port with Xray? No.
-    # Best: Xray on PORT, panel accessible via Xray fallback. But that's complex.
-    # Simplest working: just print URL and keep alive. No panel without TCP proxy.
+    threading.Thread(target=start_panel, daemon=True).start()
     try:
         while True: time.sleep(3600)
     except KeyboardInterrupt: pass
