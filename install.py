@@ -39,27 +39,20 @@ def build_xray_config():
 
 PANEL_HTML = f"""<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Stargate VLESS</title>
 <style>:root{{--bg:#0a0a0a;--card:rgba(16,16,24,0.9);--border:rgba(88,166,255,0.2);--blue:#58a6ff;--green:#3fb950;--text:#c9d1d9;--dim:#8b949e}}
-*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;text-align:center;padding:20px}}
-.card{{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:25px;max-width:650px;margin:20px auto;backdrop-filter:blur(20px)}}
+*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:system-ui;background:var(--bg);color:var(--text);min-height:100vh;text-align:center;padding:20px}}
+.card{{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:25px;max-width:650px;margin:20px auto}}
 h1{{font-size:2em;background:linear-gradient(135deg,#58a6ff,#bc8cff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:4px;margin-bottom:20px}}
 code{{background:rgba(0,0,0,.5);padding:12px;border-radius:12px;word-break:break-all;font-family:monospace;font-size:.75em;color:var(--green);margin:15px 0;display:block;max-height:150px;overflow-y:auto}}
 .btn{{padding:14px;border:none;border-radius:12px;font-weight:bold;cursor:pointer;font-size:.9em;margin:6px 0;width:100%;text-transform:uppercase;letter-spacing:1px}}
 .btn-g{{background:linear-gradient(135deg,#1f6feb,#58a6ff);color:#fff}}
 .btn-b{{background:linear-gradient(135deg,#238636,#3fb950);color:#fff}}
-.info{{color:var(--dim);font-size:.8em;margin:8px 0}}
-</style></head><body>
-<div class="card">
-<h1>🌌 STARGATE</h1>
-<p class="info">✦ QUANTUM VLESS PROTOCOL ✦</p>
-<p class="info">{DOMAIN}</p>
-<code id="c">{state['url']}</code>
-<p class="info">Port: 443 | TLS | WebSocket</p>
-<p class="info">UUID: {state['uid'][:16]}...</p>
-<button class="btn btn-g" onclick="navigator.clipboard.writeText(document.getElementById('c').textContent);alert('✅ Copied!')">📋 COPY CONFIG</button>
-<button class="btn btn-b" onclick="fetch('/new').then(r=>r.json()).then(d=>{{document.getElementById('c').textContent=d.url}})">🔄 NEW CONFIG</button>
-</div></body></html>"""
+.info{{color:var(--dim);font-size:.8em;margin:8px 0}}</style></head><body>
+<div class="card"><h1>🌌 STARGATE</h1><p class="info">{DOMAIN}</p><code id="c">{state['url']}</code>
+<p class="info">Port: 443 | TLS | WebSocket</p><p class="info">UUID: {state['uid'][:16]}...</p>
+<button class="btn btn-g" onclick="navigator.clipboard.writeText(document.getElementById('c').textContent);alert('✅ Copied!')">📋 COPY</button>
+<button class="btn btn-b" onclick="fetch('/new').then(r=>r.json()).then(d=>{{document.getElementById('c').textContent=d.url}})">🔄 NEW</button></div></body></html>"""
 
-class H(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers()
@@ -80,11 +73,12 @@ class H(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     if not download_xray(): sys.exit(1)
     with open('xray_config.json', 'w') as f: json.dump(build_xray_config(), f, indent=2)
-    subprocess.Popen(['./xray', 'run', '-config', 'xray_config.json'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(['./xray', 'run', '-config', 'xray_config.json'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(3)
+    if proc.poll() is not None:
+        print("[Stargate] Xray failed"); sys.exit(1)
     print(f"[Stargate] Panel: https://{DOMAIN}")
     print(f"[Stargate] VLESS: {state['url']}")
-    HTTPServer(('127.0.0.1', 10000), H)
     try:
-        while True: time.sleep(3600)
+        HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
     except KeyboardInterrupt: pass
